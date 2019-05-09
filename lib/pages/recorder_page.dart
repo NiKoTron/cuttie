@@ -19,7 +19,6 @@ class _RecorderPageState extends State<RecorderPage>
   VoidCallback videoPlayerListener;
   AppProvider provider;
   RecorderBloc bloc;
-  Iterable<CameraDescription> cameras = [];
 
   final _scafoldKey = GlobalKey<ScaffoldState>();
 
@@ -31,17 +30,15 @@ class _RecorderPageState extends State<RecorderPage>
 
   @override
   void didChangeDependencies() {
-    super.didChangeDependencies();
     provider = AppProvider.of(context);
-    bloc = RecorderBloc(provider.libraryRepository);
+    final cameras = provider.cameras
+        .where((c) =>
+            c.lensDirection == CameraLensDirection.front ||
+            c.lensDirection == CameraLensDirection.back)
+        .toList();
 
-    cameras = provider.cameras.where((c) =>
-        c.lensDirection == CameraLensDirection.front ||
-        c.lensDirection == CameraLensDirection.back);
-
-    if (provider.cameras.isNotEmpty) {
-      bloc.setCamera(provider.cameras[0]);
-    }
+    bloc = RecorderBloc(provider.libraryRepository, cameras);
+    super.didChangeDependencies();
   }
 
   @override
@@ -197,15 +194,13 @@ class _RecorderPageState extends State<RecorderPage>
     return StreamBuilder<CameraController>(
         stream: bloc.cameraController,
         builder: (context, snapshot) {
-          return snapshot.hasData && cameras.length > 1
+          return snapshot.hasData
               ? IconButton(
                   icon: Icon(CameraLensDirection.back ==
                           snapshot.data.description.lensDirection
                       ? Icons.camera_rear
                       : Icons.camera_front),
-                  onPressed: () => bloc.setCamera(cameras.firstWhere((c) =>
-                      snapshot.data.description.lensDirection !=
-                      c.lensDirection)),
+                  onPressed: () => bloc.toggleCamera(),
                 )
               : Container();
         });

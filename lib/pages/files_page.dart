@@ -83,7 +83,7 @@ class _FilesPageState extends State<FilesPage> {
                       Padding(
                           padding: EdgeInsets.all(4.0),
                           child: Text(
-                            'created at:\n${data.creationDate.day}:${data.creationDate.month}:${data.creationDate.year}',
+                            'created at:\n${data.creationDate.day}.${data.creationDate.month}.${data.creationDate.year}',
                             style: TextStyle(color: Colors.white),
                           ))
                     ],

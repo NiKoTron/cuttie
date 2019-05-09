@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_cutie/bloc/bloc.dart';
@@ -23,6 +24,10 @@ class RecorderBloc extends Bloc {
 
   final _timerController = StreamController<Duration>();
 
+  List<CameraDescription> cameras;
+
+  CameraDescription _currentCamera;
+
   Stream<VideoPlayerController> get videoController =>
       _videoStreamController.stream;
 
@@ -36,13 +41,12 @@ class RecorderBloc extends Bloc {
   CameraController _cameraController;
   VideoPlayerController _videoPreviewController;
   Timer _timer;
+  String _recordingPath;
 
-  RecorderBloc(this._filesRepository) {
+  RecorderBloc(this._filesRepository, this.cameras) {
     _isRecordingController.add(false);
     init();
   }
-
-  String _recordingPath;
 
   @override
   void dispose() {
@@ -57,7 +61,9 @@ class RecorderBloc extends Bloc {
     _timerController.close();
   }
 
-  void init() async {
+  Future<void> init() async {
+    await setCamera(cameras[0]);
+
     final list = await _filesRepository.getAll();
     if (list.isNotEmpty) {
       final videoFile = list.reduce((v1, v2) =>
@@ -65,16 +71,38 @@ class RecorderBloc extends Bloc {
                   v2.creationDate.millisecondsSinceEpoch
               ? v1
               : v2);
+
       await setVideo(videoFile.file);
     }
   }
 
+  Future<void> toggleCamera() async {
+    if (cameras != null && cameras.length > 1) {
+      _currentCamera = _currentCamera == cameras[1] ? cameras[0] : cameras[1];
+      await setCamera(_currentCamera);
+    }
+  }
+
+  //cuz camera plugin can't handle user's answer
+  Future<bool> _checkPermissions() async {
+    final _channel = MethodChannel('com.video_cutie/trim');
+    return await _channel.invokeMethod('checkPermissions', {});
+  }
+
   Future<void> setCamera(CameraDescription camera) async {
-    await _cameraController?.dispose();
-    _cameraController = CameraController(camera, ResolutionPreset.high);
-    await _cameraController.initialize();
-    if (_cameraController.value.isInitialized) {
-      _cameraStreamController.add(_cameraController);
+    final checked = await _checkPermissions();
+
+    if (checked) {
+      await _cameraController?.dispose();
+      try {
+        _cameraController = CameraController(camera, ResolutionPreset.high);
+        await _cameraController.initialize();
+        if (_cameraController.value.isInitialized) {
+          _cameraStreamController.add(_cameraController);
+        }
+      } catch (e) {
+        log.shout('set camera error', null, e);
+      }
     }
   }
 

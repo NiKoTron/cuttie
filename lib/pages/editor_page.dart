@@ -54,9 +54,7 @@ class _EditorPageState extends State<EditorPage> {
 
   @override
   void initState() {
-    bloc = EditorBloc(editorType: 'ffmpeg');
-    bloc.trimmedFile.listen(_onNewTrimmedFile);
-    bloc.setPath(widget.path);
+    bloc = EditorBloc(editorType: 'ffmpeg')..setPath(widget.path);
     super.initState();
   }
 
@@ -129,6 +127,13 @@ class _EditorPageState extends State<EditorPage> {
     _scafoldKey.currentState.showSnackBar(snackBar);
   }
 
+  void _trimmingErrorSnack() {
+    final snackBar = SnackBar(
+      content: Text('Something happend while trimming'),
+    );
+    _scafoldKey.currentState.showSnackBar(snackBar);
+  }
+
   void _onNewTrimmedFile(File f) {
     final snackBar = SnackBar(
       content: Text('File successfully trimmed'),
@@ -138,33 +143,57 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   Widget _rangeBarWidget() {
-    return StreamBuilder<Tuple2<int, int>>(
-        stream: bloc.range,
-        builder: (context, snapshot) {
-          return snapshot.hasData
-              ? Row(children: <Widget>[
-                  Expanded(
-                      child: RangeSlider(
-                    divisions: 100,
-                    showValueIndicator: true,
-                    min: 0.0,
-                    max: bloc.clipDurationMs.toDouble(),
-                    lowerValue: snapshot.data.item1.toDouble(),
-                    upperValue: snapshot.data.item2.toDouble(),
-                    onChanged: (s, e) =>
-                        bloc.setRange(Tuple2(s.toInt(), e.toInt())),
-                  )),
-                  IconButton(
-                      onPressed: () {
-                        bloc
-                            .trim(snapshot.data.item1, snapshot.data.item2)
-                            .then(
-                                (s) => !s ? _editorNotSupportedSnack() : null);
+    return Row(children: <Widget>[
+      Expanded(
+          child: StreamBuilder<Tuple2<int, int>>(
+              stream: bloc.range,
+              builder: (context, snapshot) {
+                return snapshot.hasData
+                    ? RangeSlider(
+                        divisions: 100,
+                        valueIndicatorFormatter: (i, d) {
+                          final duration = Duration(milliseconds: d.toInt());
+                          return '${duration.inHours}:${duration.inMinutes}.${duration.inSeconds}.${duration.inMilliseconds}';
+                        },
+                        showValueIndicator: true,
+                        min: 0.0,
+                        max: bloc.clipDurationMs.toDouble(),
+                        lowerValue: snapshot.data.item1.toDouble(),
+                        upperValue: snapshot.data.item2.toDouble(),
+                        onChanged: (s, e) =>
+                            bloc.setRange(Tuple2(s.toInt(), e.toInt())),
+                      )
+                    : Divider();
+              })),
+      StreamBuilder<bool>(
+          stream: bloc.editorBusy,
+          initialData: false,
+          builder: (context, snapshot) {
+            final isIdle = snapshot.hasData && !snapshot.data;
+            return SizedBox(
+              child: isIdle
+                  ? IconButton(
+                      onPressed: () async {
+                        try {
+                          _onNewTrimmedFile(await bloc.trim());
+                        } catch (e) {
+                          if (e is EditorNotSupportedError) {
+                            _editorNotSupportedSnack();
+                            return;
+                          }
+                          _trimmingErrorSnack();
+                        }
                       },
                       icon: Icon(Icons.content_cut))
-                ])
-              : Divider();
-        });
+                  : SpinKitRing(
+                      size: 28,
+                      color: Colors.black,
+                    ),
+              height: 48.0,
+              width: 48.0,
+            );
+          }),
+    ]);
   }
 
   Widget _seekBarWidget() {
@@ -176,7 +205,6 @@ class _EditorPageState extends State<EditorPage> {
                   value: snapshot.data.inMilliseconds.toDouble(),
                   min: 0.0,
                   max: bloc.clipDurationMs.toDouble(),
-                  divisions: 100,
                   onChanged: (i) => bloc.setPosition(i.toInt()))
               : Container();
         });

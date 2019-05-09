@@ -25,6 +25,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -41,8 +43,10 @@ public class MainActivity extends FlutterActivity {
     private static final int DEFAULT_BUFFER_SIZE = 1 * 1024 * 1024;
   private static final String CHANNEL = "com.video_cutie/trim";
     private static final int READ_REQUEST = 42;
+    private static final int PERMISSIONS_REQUEST = 432;
     private Map<String, Object> mTempArgs;
     private MethodChannel.Result mTempResult;
+    private MethodChannel.Result mPermissionResult;
 
     @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -89,17 +93,41 @@ public class MainActivity extends FlutterActivity {
                       case "checkFFMPEG":
                           result.success(FFmpeg.getInstance(this).isSupported());
                           break;
-                      case "trimFFMPEG": {
+                      case "trimFFMPEG":
                           String pathSrc = (String) arguments.get("sourcePath");
                           String pathDst = (String) arguments.get("destinationPath");
                           int start = (int) arguments.get("startMs");
                           int end = (int) arguments.get("endMs");
                           trimWithFFMPEG(pathSrc, pathDst, start, end, result);
                           break;
-                      }
+                      case "checkPermissions":
+                          mPermissionResult = result;
+                          checkPermissions();
+                          break;
                   }
 
               });
+  }
+
+
+
+    private void checkPermissions(){
+        List<String> permissions = new ArrayList<>();
+        if(checkSelfPermission(Manifest.permission.CAMERA)   != PackageManager.PERMISSION_GRANTED){
+            permissions.add(Manifest.permission.CAMERA);
+        }
+
+        if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)   != PackageManager.PERMISSION_GRANTED){
+            permissions.add(Manifest.permission.RECORD_AUDIO);
+        }
+
+        if (!permissions.isEmpty()) {
+                String[] perm = new String[permissions.size()];
+                requestPermissions(permissions.toArray(perm), PERMISSIONS_REQUEST);
+        } else {
+            mPermissionResult.success(true);
+        }
+
   }
 
 
@@ -299,7 +327,26 @@ public class MainActivity extends FlutterActivity {
                 }
                 mTempResult = null;
                 mTempArgs = null;
+                break;
             }
+
+            case PERMISSIONS_REQUEST: {
+                // If request is cancelled, the result arrays are empty.
+                    boolean granted = true;
+                    for (int r : grantResults) {
+                        if(r !=PackageManager.PERMISSION_GRANTED){
+                            granted = false;
+                        }
+                    }
+
+               if(granted) {
+                   mPermissionResult.success(true);
+               } else {
+                   checkPermissions();
+               }
+                break;
+            }
+
         }
     }
 

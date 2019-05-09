@@ -14,6 +14,8 @@ import 'bloc.dart';
 
 enum VideoState { playing, stopped, paused }
 
+class EditorNotSupportedError extends Error {}
+
 class EditorBloc extends Bloc {
   final log = Logger('EditorBloc');
 
@@ -21,10 +23,10 @@ class EditorBloc extends Bloc {
   final _rangeController = StreamController<Tuple2<int, int>>();
   final _positionController = StreamController<Duration>();
   final _playerStateController = StreamController<VideoState>();
-  final _trimmedFileController = StreamController<File>();
   final _currentFileController = StreamController<File>();
   final _muteController = StreamController<bool>();
   final _loopController = StreamController<bool>();
+  final _editorBusyController = StreamController<bool>();
 
   var _playerListener;
 
@@ -32,10 +34,10 @@ class EditorBloc extends Bloc {
   Stream<VideoState> get playerState => _playerStateController.stream;
   Stream<Tuple2<int, int>> get range => _rangeController.stream;
   Stream<Duration> get position => _positionController.stream;
-  Stream<File> get trimmedFile => _trimmedFileController.stream;
   Stream<File> get currentFile => _currentFileController.stream;
   Stream<bool> get isMute => _muteController.stream;
   Stream<bool> get isLooped => _loopController.stream;
+  Stream<bool> get editorBusy => _editorBusyController.stream;
 
   Editor editor;
 
@@ -50,6 +52,7 @@ class EditorBloc extends Bloc {
 
   VideoPlayerController _controller;
   File _videoFile;
+  Tuple2<int, int> _selectedRange;
 
   Future<DateTime> get fileChangeDate async =>
       (await _videoFile.stat()).changed;
@@ -74,6 +77,7 @@ class EditorBloc extends Bloc {
     if (videoFile != null && await videoFile.exists()) {
       _videoFile = videoFile;
       _currentFileController.add(_videoFile);
+
       _controller = VideoPlayerController.file(_videoFile)
         ..removeListener(_playerListener)
         ..addListener(_playerListener);
@@ -94,8 +98,8 @@ class EditorBloc extends Bloc {
     _playerStateController.close();
     _rangeController.close();
     _positionController.close();
-    _trimmedFileController.close();
     _muteController.close();
+    _editorBusyController.close();
 
     _controller
       ..removeListener(_playerListener)
@@ -104,7 +108,13 @@ class EditorBloc extends Bloc {
   }
 
   void setRange(Tuple2<int, int> range) {
-    _rangeController.sink.add(range);
+    if (_selectedRange?.item1 != range.item1) {
+      setPosition(range.item1);
+    } else if (_selectedRange?.item2 != range.item2) {
+      setPosition(range.item2);
+    }
+    _selectedRange = range;
+    _rangeController.sink.add(_selectedRange);
   }
 
   void setPosition(int position) {
@@ -129,14 +139,22 @@ class EditorBloc extends Bloc {
     }
   }
 
-  Future<bool> trim(int start, int end) async {
+  Future<File> trim() async {
+    _editorBusyController.add(true);
     final isSupported = await editor.isItSupported();
-    if (isSupported) {
-      final trimmedFile = await editor.trim(_videoFile, start, end);
-      _trimmedFileController.add(trimmedFile);
-      return true;
+    if (!isSupported) {
+      _editorBusyController.add(false);
+      throw EditorNotSupportedError();
     }
-    return false;
+    try {
+      final file = await editor.trim(
+          _videoFile, _selectedRange.item1, _selectedRange.item2);
+      _editorBusyController.add(false);
+      return file;
+    } catch (e) {
+      _editorBusyController.add(false);
+      rethrow;
+    }
   }
 
   Future<void> share() async {
